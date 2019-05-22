@@ -1,0 +1,137 @@
+---
+title: "House_Prices"
+author: "Corey Arnouts"
+date: "May 20, 2019"
+output:
+  rmdformats::readthedown: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Define My Random Forest Function
+```{r}
+
+source("I:/Actuarl/Analytics/Resources/R/Scripts for Reference/RandomForestNulls_testing.R")
+```
+
+
+
+# Import Training Data
+```{r}
+# Import training data
+train <- read.csv('https://raw.githubusercontent.com/jonygeta/Data605FinalProject/master/train.csv')
+test <- read.csv('https://raw.githubusercontent.com/jonygeta/Data605FinalProject/master/test.csv')
+test <- cbind(test, SalePrice=rep(0,nrow(test)))
+
+```
+
+
+#Create the Model and Test it on the Train Data 
+```{r}
+
+
+#nums <- unlist(lapply(train, is.numeric))  
+#data_numeric <- train[, nums]
+
+data_numeric <- train
+
+train.index1 <- createDataPartition(data_numeric$SalePrice, p = .7, list = FALSE) 
+train_data<- data_numeric[ train.index1,]
+hold_out_data  <- data_numeric[-train.index1,]    # add some categorical columns to data_numeric to see how it improves the model
+
+
+hold_out_data <- RF_with_Nulls(train_data,hold_out_data,"SalePrice",.5,6,500,.00005,15,50)
+
+
+hold_out_data$Error <- abs(hold_out_data$SalePrice - hold_out_data$prediction_overall)
+
+
+```
+
+
+#Testing the Model
+```{r}
+mean(hold_out_data$Error)
+sd(hold_out_data$Error)
+
+ggplot(hold_out_data, aes(x=prediction_overall, y=SalePrice)) +
+    geom_point(shape=1) +    # Use hollow circles
+    geom_smooth(method=lm,   # Add linear regression line
+                se=FALSE)    # Don't add shaded confidence region
+
+
+ggplot(hold_out_data, aes(x=SalePrice, y=Error)) +
+    geom_point(shape=1) +    # Use hollow circles
+    geom_smooth(method=lm,   # Add linear regression line
+                se=FALSE)    # Don't add shaded confidence region
+
+```
+
+#Variable Importance
+```{r, message=FALSE,echo=FALSE, warning=FALSE}
+variable_list <- vector("list", length(colnames(hold_out_data)))
+names(variable_list)<-colnames(hold_out_data)
+
+variable_list <- head(variable_list, -1)
+
+for (i in names(variable_list))
+{
+  
+  variable_list[i] = 0
+  
+}
+
+
+
+
+for (j in names(variable_list))
+{
+
+for (i in 1:length(models)){
+  print(j)
+  print(i)
+  print(models[[i]][j])
+  
+   if(is.na(if(is.null(models[[i]][j])==TRUE){NA}else{models[[i]][j]})==FALSE)
+   {
+     print(models[[i]][[j]])
+     
+     variable_list[[j]] = variable_list[[j]] + models[[i]][[j]]
+   }
+}
+
+}
+
+variable_importance <- as.data.frame(variable_list)
+
+variable_importance <- as.data.frame(t(variable_importance))
+
+library(data.table)
+variable_importance <- setDT(variable_importance , keep.rownames = TRUE)[]
+
+colnames(variable_importance) <- c("Features","Importance")
+
+
+```
+
+
+```{r}
+
+#need to sort Variable Importance and then take the top 
+variable_importance <-variable_importance[order(variable_importance$Importance, decreasing = TRUE),]
+
+variable_importance2 <- filter(variable_importance,variable_importance$Importance >variable_importance$Importance[30])
+
+
+# Very basic bar graph
+ggplot(data=variable_importance2, aes(x=reorder(Features, -Importance), y=Importance)) +
+    geom_bar(stat="identity")+
+  coord_flip() +
+    theme(text = element_text(size=7))+xlab("Variables Used")
+
+```
+
