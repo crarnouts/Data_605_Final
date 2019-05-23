@@ -1,0 +1,325 @@
+---
+title: "House_Prices"
+author: "Corey Arnouts"
+date: "May 20, 2019"
+output:
+  rmdformats::readthedown: default
+  html_document: default
+  pdf_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#Libraries
+```{r}
+library(MASS)
+library(Matrix)
+library(matlib)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(kableExtra)
+```
+
+
+## Problem 1
+
+**Using R, generate a random variable X that has 10,000 random uniform numbers from 1 to N, where N can be any number of your choosing greater than or equal to 6. Then generate a random variable Y that has 10,000 random normal numbers with a mean of $\mu=\sigma=\frac{N+1}{2}$.**
+
+
+###Random Variable X
+```{r, echo=TRUE, eval=TRUE, comment=NA}
+N<- round(runif(1, 6, 100))
+n<-10000
+
+X<-runif(n,min=0,max=N)
+hist(X)
+```
+
+
+###Random Variable Y
+```{r, echo=TRUE, eval=TRUE, comment=NA}
+Y<-rnorm(n,(N+1)/2,(N+1)/2)
+hist(Y)
+abline(v=(N+1)/2,col="red")
+```
+
+
+
+
+### Probability
+
+**Calculate as a minimum the below probabilities a through c. Assume the small letter "x" is estimated as the median of the X variable, and the small letter "y" is estimated as the 1st quartile of the Y variable. Interpret the meaning of all probabilities.**
+
+```{r echo=TRUE, eval=TRUE}
+x<-median(X)
+round(x,2)
+y<-quantile(Y,0.25)[[1]]
+round(y,2)
+```
+
+*Probability that X is greater than its median given that X is greater than the first quartile of Y*
+
+a. $P(X>x | X>y)$ 
+
+$P(X>x \ | \ X>y) = \frac{P(X>x \ , \ X>y)}{P(X>y)}$
+
+```{r echo=TRUE, eval=TRUE}
+Pxxandxy<-sum(X>x & X>y)/n #all the X greater than x and greater than y divided by all possible X
+Pxy<-sum(X>y)/n #all x greater than y divided by all possible X
+Pxxgivenxy=Pxxandxy/Pxy
+round(Pxxgivenxy,2)
+```
+
+*Probability that X is grater than all possible x and Y is greater than all possible y*
+
+b. $P(X>x, Y>y)$ 
+
+```{r echo=TRUE, eval=TRUE}
+Pxxyy<-(sum(X>x & Y>y))/n
+round(Pxxyy,2)
+```
+
+*Probability of X greater than its median and greater than the first quantile of Y*
+
+c. $P(X<x | X>y)$
+
+
+```{r echo=TRUE, eval=TRUE}
+Pxxandxy<-sum(X<x & X>y)/n
+round(Pxxandxy,2)
+```
+
+##Independance
+
+
+**Investigate whether P(X>x and Y>y)=P(X>x)P(Y>y) by building a table and evaluating the marginal and joint probabilities.**
+
+```{r echo=TRUE, eval=TRUE}
+matrix<-matrix( c(sum(X>x & Y<y),sum(X>x & Y>y), sum(X<x & Y<y),sum(X<x & Y>y)), nrow = 2,ncol = 2)
+matrix<-cbind(matrix,c(matrix[1,1]+matrix[1,2],matrix[2,1]+matrix[2,2]))
+matrix<-rbind(matrix,c(matrix[1,1]+matrix[2,1],matrix[1,2]+matrix[2,2],matrix[1,3]+matrix[2,3]))
+contingency<-as.data.frame(matrix)
+names(contingency) <- c("X>x","X<x", "Total")
+row.names(contingency) <- c("Y<y","Y>y", "Total")
+kable(contingency) %>%
+  kable_styling(bootstrap_options = "bordered")
+
+prob_matrix<-matrix/matrix[3,3]
+contingency_p<-as.data.frame(prob_matrix)
+names(contingency_p) <- c("X>x","X<x", "Total")
+row.names(contingency_p) <- c("Y<y","Y>y", "Total")
+kable(round(contingency_p,2)) %>%
+  kable_styling(bootstrap_options = "bordered")
+```
+
+**Compute P(X>x)P(Y>y)**
+
+```{r}
+prob_matrix[3,1]*prob_matrix[2,3]
+```
+**Compute P(X>x and Y>y)**
+```{r}
+round(prob_matrix[2,1],digits = 3)
+```
+
+**P(X>x and Y>y)=P(X>x)P(Y>y)**
+```{r}
+prob_matrix[3,1]*prob_matrix[2,3]==round(prob_matrix[2,1],digits = 3)
+```
+
+**Since the results are so similar we would conclude that X and Y are indeed independent**
+
+
+
+**Check to see if independence holds by using Fisher's Exact Test and the Chi Square Test. What is the difference between the two? Which is most appropriate?**
+
+```{r, echo=TRUE, eval=TRUE, comment=NA}
+fisher.test(matrix,simulate.p.value=TRUE)
+```
+
+```{r, echo=TRUE, eval=TRUE, comment=NA}
+chisq.test(matrix, correct=TRUE)
+```
+
+*Fisher's Exact Test is for is used when you have small cell sizes (less than 5).  The Chi Square Test is used when the cell sizes are large.  It would be appropriate in this case.*
+
+
+#Problem Two
+
+##Define My Random Forest Function
+```{r, message=FALSE, warning=FALSE}
+
+source("https://raw.githubusercontent.com/crarnouts/Data_605_Final/master/RandomForestNulls_testing.R")
+```
+
+
+
+##Import Training Data
+```{r, message=FALSE, warning=FALSE}
+# Import training data
+
+train <- read.csv('https://raw.githubusercontent.com/crarnouts/Data_605_Final/master/train.csv')
+
+test <- read.csv('https://raw.githubusercontent.com/crarnouts/Data_605_Final/master/test.csv')
+
+```
+
+
+##Create the Model and Test it on the Train Data 
+** I created a random forest function that you can find above that uses decision trees from rpart and aggregates them together for a combined score**
+
+**Arguements for Random Forest Function are (data_to_train,data_to_test/score,target_variable,percent_of_rows_in_each_tree,number_of_columns_in_each_tree,number_of_trees,complexity_parameter,min_bucket_size,print_every_ith_tree)**
+
+```{r, message=FALSE, warning=FALSE}
+#nums <- unlist(lapply(train, is.numeric))
+#data_numeric <- train[, nums]
+train$Id <- NULL
+
+data_numeric <- train
+train.index1 <- createDataPartition(data_numeric$SalePrice, p = .7, list = FALSE) 
+train_data<- data_numeric[ train.index1,]
+hold_out_data  <- data_numeric[-train.index1,]    # add some categorical columns to data_numeric to see how it improves the model
+
+
+lm2<-lm(SalePrice ~ GrLivArea+BsmtFinSF1+GarageCars+GrLivArea+LotArea+Fireplaces+YearBuilt+OverallQual+BedroomAbvGr,data=train)
+
+hold_out_data <- RF_with_Nulls(train_data,hold_out_data,"SalePrice",.5,7,500,.005,5,100)
+
+hold_out_data$Linear_Prediction <- predict(lm2,hold_out_data)
+
+hold_out_data$Error <- abs(hold_out_data$SalePrice - hold_out_data$prediction_overall)
+```
+**The above 5 trees were just 5 of the 500 trees used**
+
+##Testing the Model
+```{r, message=FALSE, warning=FALSE}
+cor(hold_out_data$prediction_overall,hold_out_data$SalePrice)
+cor(hold_out_data$Linear_Prediction,hold_out_data$SalePrice)
+mean(hold_out_data$Error)
+sd(hold_out_data$Error)
+
+ggplot(hold_out_data, aes(x=Linear_Prediction, y=SalePrice)) +
+    geom_point(shape=1) +    # Use hollow circles
+    geom_smooth(method=lm,   # Add linear regression line
+                se=FALSE)
+
+ggplot(hold_out_data, aes(x=prediction_overall, y=SalePrice)) +
+    geom_point(shape=1) +    # Use hollow circles
+    geom_smooth(method=lm,   # Add linear regression line
+                se=FALSE)    # Don't add shaded confidence region
+ggplot(hold_out_data, aes(x=SalePrice, y=Error)) +
+    geom_point(shape=1) +    # Use hollow circles
+    geom_smooth(method=lm,   # Add linear regression line
+                se=FALSE)    # Don't add shaded confidence region
+```
+
+#Variable Importance
+```{r, message=FALSE, warning=FALSE, include=FALSE, results="hide"}
+# variable_list <- vector("list", length(colnames(hold_out_data)))
+# names(variable_list)<-colnames(hold_out_data)
+# variable_list <- head(variable_list, -1)
+# for (i in names(variable_list))
+# {
+#   
+#   variable_list[i] = 0
+#   
+# }
+# for (j in names(variable_list))
+# {
+# for (i in 1:length(models)){
+#   print(j)
+#   print(i)
+#   print(models[[i]][j])
+#   
+#    if(is.na(if(is.null(models[[i]][j])==TRUE){NA}else{models[[i]][j]})==FALSE)
+#    {
+#      print(models[[i]][[j]])
+#      
+#      variable_list[[j]] = variable_list[[j]] + models[[i]][[j]]
+#    }
+# }
+# }
+# variable_importance <- as.data.frame(variable_list)
+# variable_importance <- as.data.frame(t(variable_importance))
+# library(data.table)
+# variable_importance <- setDT(variable_importance , keep.rownames = TRUE)[]
+# colnames(variable_importance) <- c("Features","Importance")
+```
+
+
+```{r}
+# #need to sort Variable Importance and then take the top 
+# variable_importance <-variable_importance[order(variable_importance$Importance, decreasing = TRUE),]
+# variable_importance2 <- filter(variable_importance,variable_importance$Importance >variable_importance$Importance[30])
+# # Very basic bar graph
+# ggplot(data=variable_importance2, aes(x=reorder(Features, -Importance), y=Importance)) +
+#     geom_bar(stat="identity")+
+#   coord_flip() +
+#     theme(text = element_text(size=7))+xlab("Variables Used")
+```
+
+
+#Testing out Different Models
+
+**Build a Plot Linear Model Function**
+```{r, message=FALSE, warning=FALSE}
+plotlm<-function(lm) {
+  print(summary(lm))
+  plot(fitted(lm),resid(lm))
+  abline(0, 0)
+  hist(resid(lm),breaks = 100)
+  qqnorm(resid(lm))
+  qqline(resid(lm))  
+}
+
+
+
+```
+
+
+
+
+
+# Score the Test Data
+```{r, message=FALSE, warning=FALSE}
+train <- read.csv('https://raw.githubusercontent.com/crarnouts/Data_605_Final/master/train.csv')
+test <- read.csv('https://raw.githubusercontent.com/crarnouts/Data_605_Final/master/test.csv')
+test$SalePrice <- 0
+
+# nums <- unlist(lapply(train, is.numeric))
+# train <- train[, nums]
+# 
+# nums <- unlist(lapply(test, is.numeric))
+# test <- test[, nums]
+
+train$Id <- NULL
+ID <- test %>% select(Id)
+test$Id <- NULL
+
+lm2<-lm(SalePrice ~ GrLivArea+BsmtFinSF1+GarageCars+GrLivArea+LotArea+Fireplaces+YearBuilt+OverallQual+BedroomAbvGr,data=train)
+
+
+test2 <- RF_with_Nulls(train,test,"SalePrice",.5,6,500,.005,5,500)
+test2$Linear_Prediction<-predict(lm2,test)
+
+
+test2$Id <- 1
+test2$Id <- ID$Id
+#test2$SalePrice <- test2$prediction_overall
+# 
+# test2$SalePrice <- test2$Linear_Prediction
+# test2$SalePrice[is.na(test2$SalePrice)] <- test2$prediction_overall
+
+submission <- test2 %>% select(Id,SalePrice)
+
+write.csv(submission,file = "submission.csv",row.names = FALSE)
+
+```
+
+#Kaggle Submission with Random Forest Function
+
+![Kaggle_submission](Kaggle_submission.PNG)
+
+
+
